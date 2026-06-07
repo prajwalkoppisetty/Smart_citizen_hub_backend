@@ -23,7 +23,7 @@ const {
     checkDuplicate,
     subscribeToComplaint,
     getOfficerAnalytics
-} = require("../controllers/complaintController");
+} = require("../controllers/ComplaintController");
 
 router.post(
     "/",
