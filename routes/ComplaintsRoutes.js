@@ -22,7 +22,8 @@ const {
     reviewFieldWork,
     checkDuplicate,
     subscribeToComplaint,
-    getOfficerAnalytics
+    getOfficerAnalytics,
+    analyzeComplaint
 } = require("../controllers/ComplaintController");
 
 router.post(
@@ -137,6 +138,12 @@ router.get(
     authMiddleware,
     authorizeRoles(['municipal_officer', 'admin']),
     getOfficerAnalytics
+);
+
+router.post(
+    "/analyze",
+    authMiddleware,
+    analyzeComplaint
 );
 
 module.exports = router;

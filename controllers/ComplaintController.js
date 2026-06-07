@@ -361,6 +361,121 @@ const getOfficerAnalytics = async (req, res) => {
     }
 }
 
+const analyzeComplaint = async (req, res) => {
+    try {
+        const { imageBase64, description } = req.body;
+        if (!imageBase64) {
+            return res.status(400).json({ success: false, message: 'Image base64 data is required for analysis' });
+        }
+
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+            console.error('GEMINI_API_KEY is not defined in backend environment.');
+            return res.status(500).json({ success: false, message: 'Gemini AI API key is not configured on the server.' });
+        }
+
+        const MODEL_CANDIDATES = [
+            "gemini-2.5-flash",
+            "gemini-1.5-flash",
+            "gemini-3.5-flash",
+            "gemini-3.1-flash-lite",
+            "gemini-2.5-pro"
+        ];
+
+        const prompt = `
+You are an AI civic complaint classifier.
+
+Available categories:
+1. Road & Infrastructure
+2. Water & Sanitation
+3. Garbage & Waste
+4. Electricity & Lighting
+5. Others / Public Health
+
+Analyze the provided image and description.
+Description: "${description || 'No description provided.'}"
+
+You must determine the following:
+- title: A short, professional, and formal 4-8 word title for the complaint (e.g., 'Overflowing Public Garbage Bin' or 'Dangerous Pothole on Roadway').
+- summary: A very brief, one-sentence description summarizing the issue (e.g., 'Broken streetlight on 5th avenue causing dark roadway hazards').
+- description: A clean, grammatically correct, formal, and detailed paragraph describing the issue. Synthesize both what is visible in the image and what the user wrote in their description.
+- category: Must be exactly one of the five categories listed above.
+- severity: Must be exactly 'Low', 'Medium', or 'High'.
+- confidence: An integer between 0 and 100 representing your confidence level.
+
+Return ONLY a raw JSON object matching the schema below. Do not wrap it in markdown code blocks, do not add comments, and do not add any extra text.
+
+{
+ "title": "formal title",
+ "summary": "brief summary line",
+ "description": "detailed formal description",
+ "category": "category name",
+ "severity": "severity rating",
+ "confidence": 95
+}
+`;
+
+        let lastError = null;
+        for (const modelName of MODEL_CANDIDATES) {
+            try {
+                console.log(`[AI Analysis] Attempting backend analysis using model: ${modelName}`);
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            contents: [
+                                {
+                                    parts: [
+                                        {
+                                            inlineData: {
+                                                mimeType: "image/jpeg",
+                                                data: imageBase64
+                                            }
+                                        },
+                                        {
+                                            text: prompt
+                                        }
+                                    ]
+                                }
+                            ]
+                        })
+                    }
+                );
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API returned status ${response.status}: ${errorText}`);
+                }
+
+                const data = await response.json();
+                const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!responseText) {
+                    throw new Error("Empty response received from Gemini API");
+                }
+
+                const cleanedText = responseText.trim().replace(/^```json\s*|```\s*$/gi, '');
+                const parsedData = JSON.parse(cleanedText);
+
+                console.log(`[AI Analysis] Backend analysis success using model: ${modelName}`);
+                return res.status(200).json({ success: true, analysis: parsedData });
+            } catch (err) {
+                console.warn(`[AI Analysis] Model ${modelName} failed on backend. Error:`, err.message || err);
+                lastError = err;
+                continue;
+            }
+        }
+
+        throw lastError || new Error("All Gemini model candidates failed.");
+    } catch (error) {
+        console.error('[AI Analysis] Backend analysis error:', error);
+        return res.status(500).json({ success: false, message: error.message || 'AI Analysis failed' });
+    }
+};
+
 module.exports = {
     createComplaint,
     getComplaints,
@@ -377,8 +492,10 @@ module.exports = {
     reviewFieldWork,
     checkDuplicate,
     subscribeToComplaint,
-    getOfficerAnalytics
-}
+    getOfficerAnalytics,
+    analyzeComplaint
+};
+
 
 
 
